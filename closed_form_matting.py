@@ -4,6 +4,7 @@ import numpy as np
 from numpy.lib.stride_tricks import as_strided
 import scipy.misc
 import scipy.sparse
+from scipy.sparse import csr_matrix
 from skimage.color import rgb2gray
 
 
@@ -82,6 +83,25 @@ def closed_form_matte(img, scribbled_img, lambda_c, epsilon):
     return vals, L, alpha
 
 
+def save_sparse_csr(filename, array):
+    np.savez(filename, data=array.data, indices=array.indices,
+             indptr=array.indptr, shape=array.shape)
+
+
+def load_sparse_csr(filename):
+    loader = np.load(filename + '.npz')
+    return csr_matrix((loader['data'], loader['indices'], loader['indptr']),
+                      shape=loader['shape'])
+
+
+def compute_loss(img, matte):
+    loss = 0.0
+    for i in range(3):
+        loss += img[:,:,i].ravel().transpose().dot(
+            matte.dot(img[:,:,i].ravel()))
+    return loss
+
+
 def main():
     parser = build_parser()
     options = parser.parse_args()
@@ -94,11 +114,16 @@ def main():
         scribbled_img = scipy.misc.imread(options.scribbled)
     else:
         scribbled_img = scipy.misc.imread(title+"_m."+ext)
+    # If Memory Error, use resize:
+    # img = scipy.misc.imresize(img, 0.25)
+    # scribbled_img = scipy.misc.imresize(scribbled_img, 0.25)
     vals, L, alpha = closed_form_matte(
         img, scribbled_img, options.lambda_c, options.epsilon)
-    np.save("data/"+name, L)
-    np.save("data/"+name+"_vals", vals)
+    save_sparse_csr("data/"+name, L.tocsr())
     scipy.misc.imsave(title+"_alpha."+ext, alpha)
+    print("Computing base loss for ", name, " with size ", img.shape)
+    loss = compute_loss(img, L)
+    print("Loss: ", loss)
 
 if __name__ == "__main__":
     main()
